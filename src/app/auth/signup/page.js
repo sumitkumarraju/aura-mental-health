@@ -13,7 +13,6 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -22,46 +21,31 @@ export default function SignupPage() {
 
     try {
       const supabase = createClient();
-      const { error: err } = await supabase.auth.signUp({
+      const { data, error: err } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { name },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
       if (err) throw err;
-      setSuccess(true);
+
+      // Auto-confirm is enabled, ensure session is set and log in immediately
+      if (!data?.session) {
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (signInErr) throw signInErr;
+      }
+
+      window.location.href = '/';
     } catch (err) {
       setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   };
-
-  if (success) {
-    return (
-      <div className="page-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-panel"
-          style={{ padding: 'var(--space-8)', maxWidth: 440, width: '100%', textAlign: 'center' }}
-        >
-          <EnvelopeSimple size={48} style={{ color: 'var(--accent-teal)', margin: '0 auto var(--space-4)' }} />
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-2xl)', fontWeight: 300 }}>
-            Check your email
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', marginTop: 'var(--space-2)', fontWeight: 300 }}>
-            We sent a confirmation link to <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>. Click it to activate your account.
-          </p>
-          <Link href="/auth/login" className="btn btn--glass" style={{ marginTop: 'var(--space-5)' }}>
-            Back to login
-          </Link>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="page-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
