@@ -134,10 +134,12 @@ export default function JourneyPage() {
   const [checkins, setCheckins] = useState([]);
   const [timeRange, setTimeRange] = useState(7); // 7 | 30 | 90
   const [activeDimension, setActiveDimension] = useState('mood');
+  const [analysis, setAnalysis] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
-    // Generate dummy data if user has fewer than 2 checkins for demonstration
     const saved = getCheckins();
+    let dataToUse = saved;
     if (saved.length > 0) {
       setCheckins(saved);
     } else {
@@ -150,7 +152,30 @@ export default function JourneyPage() {
         { id: '5', timestamp: new Date(now - 86400000 * 1).toISOString(), mood: 4, anxiety: 4, energy: 7, sleep: 6, stress: 4, connection: 8 },
       ];
       setCheckins(mock);
+      dataToUse = mock;
     }
+
+    // Trigger AI Psychological Pattern Analysis
+    async function runAnalysis(items) {
+      setIsAnalyzing(true);
+      try {
+        const res = await fetch('/api/journey/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checkins: items }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAnalysis(data);
+        }
+      } catch (err) {
+        console.warn('Failed to load AI journey analysis:', err);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    }
+
+    runAnalysis(dataToUse);
   }, []);
 
   const filtered = checkins.filter(
@@ -162,18 +187,48 @@ export default function JourneyPage() {
     label: new Date(c.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
   }));
 
+  const observations = analysis?.observations || [
+    {
+      tag: 'A PATTERN YOU MAY WANT TO NOTICE…',
+      observation: 'You marked meaningful conversations as helpful several times this week. Connection seems to soften moments when anxiety climbs.',
+      accent: 'var(--accent-teal)',
+    },
+    {
+      tag: 'A PATTERN YOU MAY WANT TO NOTICE…',
+      observation: 'You often choose music when you feel overwhelmed. Taking ten minutes of quiet soundscapes coincides with a drop in your reported tension.',
+      accent: 'var(--accent-calm)',
+    },
+    {
+      tag: 'A PATTERN YOU MAY WANT TO NOTICE…',
+      observation: 'Sleep quality and daily energy show a strong parallel in your 7-day view. Unwinding without screens before bed tends to support morning ease.',
+      accent: 'var(--accent-warm)',
+    },
+    {
+      tag: 'A PATTERN YOU MAY WANT TO NOTICE…',
+      observation: 'Writing down your thoughts in the Journal correlates with a clearer state of mind the following afternoon.',
+      accent: 'var(--accent-green)',
+    },
+  ];
+
   return (
     <div className="page-container">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
         
         {/* Header */}
         <div style={{ marginBottom: 'var(--space-8)' }}>
-          <span className="label-text" style={{ color: 'var(--accent-calm)' }}>LONGITUDINAL PATTERNS</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+            <span className="label-text" style={{ color: 'var(--accent-calm)' }}>LONGITUDINAL PATTERNS</span>
+            {analysis?.stabilityScore && (
+              <span className="badge-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', background: 'rgba(20, 184, 166, 0.12)', border: '1px solid var(--accent-teal)', borderRadius: 'var(--radius-full)', fontSize: 'var(--text-xs)', color: 'var(--accent-teal)' }}>
+                <Sparkle size={14} weight="fill" /> Emotional Resilience: {analysis.stabilityScore}%
+              </span>
+            )}
+          </div>
           <h1 className="display-text" style={{ fontSize: 'var(--text-5xl)', marginTop: 'var(--space-2)' }}>
             Emotional Journey
           </h1>
           <p style={{ fontSize: 'var(--text-lg)', color: 'var(--text-secondary)', fontWeight: 300, marginTop: 'var(--space-2)', maxWidth: 640 }}>
-            Gentle reflections on your emotional patterns over time. This is not a diagnosis—it is a space to observe and understand your personal rhythms.
+            {analysis?.summary || 'Gentle reflections on your emotional patterns over time. This is not a diagnosis—it is a space to observe and understand your personal rhythms.'}
           </p>
         </div>
 
@@ -239,51 +294,48 @@ export default function JourneyPage() {
           <SimpleTrendChart data={chartData} dimension={activeDimension} />
         </div>
 
-        {/* Personal Observations Section (Non-Clinical) */}
+        {/* Personal Observations Section (Psychological & Emotional Humor) */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-            <Eye size={20} style={{ color: 'var(--accent-warm)' }} />
-            <h2 className="display-text" style={{ fontSize: 'var(--text-2xl)' }}>
-              Personal Observations
-            </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <Eye size={20} style={{ color: 'var(--accent-warm)' }} />
+              <h2 className="display-text" style={{ fontSize: 'var(--text-2xl)' }}>
+                Psychological Patterns & Observations
+              </h2>
+            </div>
+            {isAnalyzing && (
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                Analyzing longitudinal correlations...
+              </span>
+            )}
           </div>
 
           <div className="bento-grid" style={{ marginTop: 0 }}>
-            <div className="bento-item-half glass-panel" style={{ padding: 'var(--space-6)' }}>
-              <span className="label-text" style={{ color: 'var(--accent-teal)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                A PATTERN YOU MAY WANT TO NOTICE…
-              </span>
-              <p style={{ fontSize: 'var(--text-lg)', fontWeight: 300, color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                You marked meaningful conversations as helpful several times this week. Connection seems to soften moments when anxiety climbs.
-              </p>
-            </div>
-
-            <div className="bento-item-half glass-panel" style={{ padding: 'var(--space-6)' }}>
-              <span className="label-text" style={{ color: 'var(--accent-calm)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                A PATTERN YOU MAY WANT TO NOTICE…
-              </span>
-              <p style={{ fontSize: 'var(--text-lg)', fontWeight: 300, color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                You often choose music when you feel overwhelmed. Taking ten minutes of quiet soundscapes coincides with a drop in your reported tension.
-              </p>
-            </div>
-
-            <div className="bento-item-half glass-panel" style={{ padding: 'var(--space-6)' }}>
-              <span className="label-text" style={{ color: 'var(--accent-warm)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                A PATTERN YOU MAY WANT TO NOTICE…
-              </span>
-              <p style={{ fontSize: 'var(--text-lg)', fontWeight: 300, color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                Sleep quality and daily energy show a strong parallel in your 7-day view. Unwinding without screens before bed tends to support morning ease.
-              </p>
-            </div>
-
-            <div className="bento-item-half glass-panel" style={{ padding: 'var(--space-6)' }}>
-              <span className="label-text" style={{ color: 'var(--accent-green)', display: 'block', marginBottom: 'var(--space-2)' }}>
-                A PATTERN YOU MAY WANT TO NOTICE…
-              </span>
-              <p style={{ fontSize: 'var(--text-lg)', fontWeight: 300, color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                Writing down your thoughts in the Journal correlates with a clearer state of mind the following afternoon.
-              </p>
-            </div>
+            {observations.map((item, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1, duration: 0.4 }}
+                className="bento-item-half glass-panel"
+                style={{ padding: 'var(--space-6)' }}
+              >
+                <span
+                  className="label-text"
+                  style={{
+                    color: item.accent || 'var(--accent-teal)',
+                    display: 'block',
+                    marginBottom: 'var(--space-2)',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  {item.tag}
+                </span>
+                <p style={{ fontSize: 'var(--text-base)', fontWeight: 300, color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                  {item.observation}
+                </p>
+              </motion.div>
+            ))}
           </div>
         </div>
 

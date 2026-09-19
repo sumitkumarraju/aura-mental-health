@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { createChatCompletion, AURA_PSYCHOLOGICAL_COUNSELOR_PROMPT } from '@/lib/ai-client';
 
 const CRISIS_KEYWORDS = [
   'suicide', 'kill myself', 'want to die', 'end my life',
@@ -7,27 +8,36 @@ const CRISIS_KEYWORDS = [
   "don't want to live", 'better off dead',
 ];
 
-const AURA_SYSTEM_PROMPT = `You are AURA — an emotion-aware AI companion for a mental health support platform. You are NOT a therapist, NOT a medical professional, and NOT a crisis hotline.
-
-Your role:
-- Listen empathetically and reflect back what the user is feeling
-- Ask thoughtful follow-up questions that help the user understand their emotions
-- Never diagnose, prescribe, or give medical advice
-- Reference the user's profile preferences when available (what helps them, their support style)
-- Keep responses conversational, warm, and under 3 sentences
-- Use the user's name naturally when appropriate
-- If the user seems to want advice, gently reframe toward self-discovery ("What do you think might help?" rather than "You should...")
-
-Safety rules:
-- If the user mentions self-harm, suicide, or crisis situations, IMMEDIATELY respond with empathy and direct them to professional help
-- Never roleplay as a doctor, therapist, or emergency responder
-- Never minimize the user's feelings
-
-Personality: Warm, gentle, non-judgmental, curious. Think of a deeply empathetic friend who asks the right questions.`;
-
 function detectCrisis(text) {
   const lower = text.toLowerCase();
   return CRISIS_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+function deriveActionsFromResponse(text) {
+  const lower = text.toLowerCase();
+  const actions = [];
+
+  if (lower.includes('breath') || lower.includes('calm') || lower.includes('nervous system') || lower.includes('shoulders')) {
+    actions.push({ label: 'Box Breathing (Calm)', action: 'calm' });
+  }
+  if (lower.includes('write') || lower.includes('journal') || lower.includes('page') || lower.includes('thought')) {
+    actions.push({ label: 'Write in Journal', action: 'journal' });
+  }
+  if (lower.includes('connect') || lower.includes('friend') || lower.includes('talk') || lower.includes('reach out')) {
+    actions.push({ label: 'View Support Circle', action: 'action' });
+  }
+  if (lower.includes('walk') || lower.includes('move') || lower.includes('step away')) {
+    actions.push({ label: 'Mindful Step', action: 'break' });
+  }
+
+  if (actions.length === 0) {
+    actions.push(
+      { label: 'Unpack this feeling', action: 'reflect' },
+      { label: 'Take a quiet pause', action: 'calm' }
+    );
+  }
+
+  return actions.slice(0, 3);
 }
 
 export async function POST(request) {
@@ -51,24 +61,21 @@ export async function POST(request) {
       });
     }
 
-    // Check for OpenAI API key
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      // No API key — return a signal to use client-side demo responses
-      return NextResponse.json({ useDemoMode: true });
-    }
-
-    // Fetch user context from Supabase for personalized responses
+    // Fetch user context from Supabase for personalized psychological counseling
     let userContext = '';
+    let userId = null;
+
     try {
       const supabase = await createServerSupabaseClient();
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        // Get profile
+        userId = user.id;
+
+        // Get profile preferences
         const { data: profile } = await supabase
           .from('profiles')
-          .select('name, what_helps, support_style')
+          .select('name, what_helps, what_doesnt_help, support_style')
           .eq('user_id', user.id)
           .single();
 
@@ -83,17 +90,35 @@ export async function POST(request) {
           .order('created_at', { ascending: false })
           .limit(10);
 
+        // Get recent checkin dimensions
+        const { data: recentCheckins } = await supabase
+          .from('checkins')
+          .select('energy, sleep_quality, note, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(3);
+
         if (profile) {
-          userContext += `\nUser's name: ${profile.name || 'Unknown'}`;
+          userContext += `\nUser's name: ${profile.name || 'Friend'}`;
           userContext += `\nSupport style preference: ${profile.support_style || 'listen'}`;
           if (profile.what_helps?.length > 0) {
             userContext += `\nThings that help this user: ${profile.what_helps.join(', ')}`;
+          }
+          if (profile.what_doesnt_help?.length > 0) {
+            userContext += `\nThings that DO NOT help: ${profile.what_doesnt_help.join(', ')}`;
           }
         }
 
         if (recentEmotions?.length > 0) {
           const emotionSummary = recentEmotions.map((e) => e.emotion).join(', ');
           userContext += `\nRecent emotions (last 7 days): ${emotionSummary}`;
+        }
+
+        if (recentCheckins?.length > 0) {
+          const checkinSummary = recentCheckins
+            .map((c) => `Energy: ${c.energy || '?'}/5, Sleep: ${c.sleep_quality || '?'}/5`)
+            .join(' | ');
+          userContext += `\nRecent check-in stats: ${checkinSummary}`;
         }
 
         // Save user message to DB
@@ -106,65 +131,59 @@ export async function POST(request) {
           });
         }
       }
-    } catch {
-      // Supabase not configured — proceed without user context
+    } catch (err) {
+      console.warn('[AURA-Chat] Supabase context retrieval notice:', err.message);
     }
 
-    // Build messages array for OpenAI
+    // Build messages array
+    const systemPromptWithContext = `${AURA_PSYCHOLOGICAL_COUNSELOR_PROMPT}${
+      userContext ? `\n\nUSER'S PSYCHOLOGICAL CONTEXT & HISTORY:\n${userContext}` : ''
+    }${mode === 'listen' ? '\n\nCURRENT MODE: Deep Listening. Minimize humor and advice; focus on quiet, spacious emotional validation.' : ''}`;
+
     const messages = [
-      {
-        role: 'system',
-        content: AURA_SYSTEM_PROMPT + (userContext ? `\n\nUser Context:\n${userContext}` : ''),
-      },
+      { role: 'system', content: systemPromptWithContext },
       { role: 'user', content: message },
     ];
 
-    // Call OpenAI
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages,
-        max_tokens: 300,
-        temperature: 0.8,
-      }),
+    // Call resilient AI client
+    const aiResult = await createChatCompletion({
+      messages,
+      temperature: 0.75,
+      max_tokens: 380,
     });
 
-    if (!openaiResponse.ok) {
-      const errText = await openaiResponse.text();
-      console.error('OpenAI error:', errText);
+    if (!aiResult.success) {
+      console.warn('[AURA-Chat] Remote AI unavailable, signaling client demo fallback:', aiResult.error);
       return NextResponse.json({ useDemoMode: true });
     }
 
-    const data = await openaiResponse.json();
-    const aiMessage = data.choices?.[0]?.message?.content || '';
+    const aiMessage = aiResult.content;
+    const actions = deriveActionsFromResponse(aiMessage);
 
     // Save AI response to DB
-    try {
-      const supabase = await createServerSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && sessionId) {
+    if (userId && sessionId) {
+      try {
+        const supabase = await createServerSupabaseClient();
         await supabase.from('chat_messages').insert({
           session_id: sessionId,
-          user_id: user.id,
+          user_id: userId,
           role: 'aura',
           content: aiMessage,
         });
+      } catch (saveErr) {
+        console.warn('[AURA-Chat] DB save notice:', saveErr.message);
       }
-    } catch {
-      // Ignore DB save errors — response is still valid
     }
 
     return NextResponse.json({
       response: aiMessage,
       isSafetyAlert: false,
+      actions,
+      modelUsed: aiResult.modelUsed,
     });
   } catch (err) {
     console.error('Chat API error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
+import { createChatCompletion } from '@/lib/ai-client';
 
 const SUPPORT_POOL = [
   {
@@ -12,7 +13,7 @@ const SUPPORT_POOL = [
   },
   {
     category: 'Express',
-    title: 'Write down what\'s been occupying your mind.',
+    title: "Write down what's been occupying your mind.",
     description: 'Put your thoughts on the page without judging grammar, coherence, or logic.',
     time: '5 min',
     icon: 'pencil',
@@ -65,32 +66,29 @@ const SUPPORT_POOL = [
   },
 ];
 
-function generateReason(category, recentEmotions = []) {
-  const reasons = {
-    Connect: 'Meaningful connections bring deep comfort and reduce isolation.',
-    Express: 'Expressing thoughts outwardly helps decompress cognitive overload.',
-    Reflect: 'Recurring thoughts often point to an unspoken need worth exploring.',
-    Ground: 'Sensory anchoring brings attention back from future worries to physical safety.',
-    Calm: 'Rhythmic breathwork activates the parasympathetic rest response.',
-    Move: 'Light movement helps discharge stored adrenaline from tension.',
-    Comfort: 'Familiar, soothing stimuli help regulate your nervous system.',
-  };
+function generateFallbackTasks(recentEmotions = []) {
+  const shuffled = [...SUPPORT_POOL].sort(() => Math.random() - 0.5);
+  const categories = new Set();
+  const selected = [];
 
-  if (recentEmotions.includes('anxious') || recentEmotions.includes('overwhelmed')) {
-    if (category === 'Calm') return 'You\'ve been feeling anxious lately. Breathwork directly calms the nervous system.';
-    if (category === 'Ground') return 'Grounding exercises are especially effective when anxiety is present.';
+  for (const task of shuffled) {
+    if (!categories.has(task.category) && selected.length < 3) {
+      categories.add(task.category);
+      selected.push({
+        ...task,
+        reason: recentEmotions.includes('anxious')
+          ? "Chosen to dial down mental chatter and ground your nervous system."
+          : "Tailored to offer gentle clarity and momentum today.",
+      });
+    }
   }
-
-  if (recentEmotions.includes('lonely')) {
-    if (category === 'Connect') return 'You\'ve mentioned feeling lonely recently. Even a short connection can help.';
-  }
-
-  return reasons[category] || 'This was chosen to support your emotional wellbeing today.';
+  return selected;
 }
 
 export async function POST() {
   try {
     let recentEmotions = [];
+    let userStats = '';
     let userId = null;
 
     try {
@@ -108,36 +106,85 @@ export async function POST() {
           .eq('user_id', user.id)
           .gte('created_at', sevenDaysAgo.toISOString())
           .order('created_at', { ascending: false })
-          .limit(10);
+          .limit(8);
 
-        if (emotions) {
+        if (emotions?.length > 0) {
           recentEmotions = emotions.map((e) => e.emotion);
         }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name, what_helps, support_style')
+          .eq('user_id', user.id)
+          .single();
+
+        if (profile) {
+          userStats = `User: ${profile.name || 'Friend'}. Preferred support: ${profile.support_style || 'listen'}. Helps: ${(profile.what_helps || []).join(', ')}`;
+        }
       }
-    } catch {
-      // Supabase not configured
+    } catch (err) {
+      console.warn('[AURA-Support] Context retrieval notice:', err.message);
     }
 
-    // Pick 3 diverse tasks
-    const shuffled = [...SUPPORT_POOL].sort(() => Math.random() - 0.5);
-    const categories = new Set();
-    const selected = [];
+    // Attempt AI-driven dynamic micro-task generation
+    let tasks = null;
 
-    for (const task of shuffled) {
-      if (!categories.has(task.category) && selected.length < 3) {
-        categories.add(task.category);
-        selected.push({
-          ...task,
-          reason: generateReason(task.category, recentEmotions),
-        });
+    const aiPrompt = `You are AURA's clinical psychological task director.
+Generate exactly 3 diverse, actionable micro-tasks for the user today based on their emotional profile.
+Recent feelings: ${recentEmotions.join(', ') || 'neutral, seeking balance'}.
+User info: ${userStats || 'general user seeking calm and mental clarity'}.
+
+Requirements:
+- Each task must have:
+  "category": one of ["Calm", "Express", "Reflect", "Ground", "Move", "Connect", "Comfort"]
+  "title": concise 4-7 word title
+  "description": 1-2 sentence actionable description
+  "time": estimate (e.g. "3 min", "5 min", "10 min")
+  "reason": witty, warm psychological explanation of why their brain needs this today (use gentle emotional humor, e.g. "Because doomscrolling won't solve that email")
+  "color": a hex accent (e.g. "#14B8A6", "#8B5CF6", "#F59E0B", "#10B981")
+  "href": optional link (e.g. "/calm", "/journal", "/chat", or null)
+
+Return ONLY valid JSON array with 3 objects. No markdown ticks, no commentary.`;
+
+    const aiResult = await createChatCompletion({
+      messages: [
+        { role: 'system', content: 'You output pure JSON arrays only.' },
+        { role: 'user', content: aiPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
+    });
+
+    if (aiResult.success) {
+      try {
+        const cleaned = aiResult.content.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed) && parsed.length >= 3) {
+          tasks = parsed.slice(0, 3).map((t) => ({
+            category: t.category || 'Reflect',
+            title: t.title || 'Take a moment for yourself',
+            description: t.description || 'Step back and check in with your mind.',
+            time: t.time || '5 min',
+            reason: t.reason || 'To bring balance back to your day.',
+            color: t.color || '#14B8A6',
+            icon: t.category === 'Calm' ? 'leaf' : t.category === 'Express' ? 'pencil' : t.category === 'Connect' ? 'users' : 'compass',
+            href: t.href || (t.category === 'Calm' ? '/calm' : t.category === 'Express' ? '/journal' : t.category === 'Reflect' ? '/chat' : null),
+          }));
+        }
+      } catch (parseErr) {
+        console.warn('[AURA-Support] AI JSON parse error, using fallback:', parseErr.message);
       }
     }
 
-    // Save to DB if authenticated
+    if (!tasks) {
+      tasks = generateFallbackTasks(recentEmotions);
+    }
+
+    // Save to Supabase if authenticated
     if (userId) {
       try {
         const supabase = await createServerSupabaseClient();
-        const rows = selected.map((t) => ({
+        const rows = tasks.map((t) => ({
           user_id: userId,
           category: t.category,
           title: t.title,
@@ -149,12 +196,12 @@ export async function POST() {
           href: t.href || null,
         }));
         await supabase.from('support_tasks').insert(rows);
-      } catch {
-        // Ignore save errors
+      } catch (saveErr) {
+        console.warn('[AURA-Support] DB save notice:', saveErr.message);
       }
     }
 
-    return NextResponse.json({ tasks: selected });
+    return NextResponse.json({ tasks });
   } catch (err) {
     console.error('Support generation error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

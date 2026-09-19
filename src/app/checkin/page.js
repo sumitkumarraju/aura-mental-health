@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { saveCheckin } from '@/lib/storage';
-import { Check, SmileyMeh, Smiley, SmileySad, SmileyAngry } from '@phosphor-icons/react';
+import { Check, SmileyMeh, Smiley, SmileySad, SmileyAngry, Sparkle, ChatCircleDots } from '@phosphor-icons/react';
 
 const MOOD_LABELS = ['Terrible', 'Bad', 'Low', 'Meh', 'Okay', 'Good', 'Great'];
 
@@ -20,6 +20,22 @@ export default function CheckinPage() {
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [showOptionals, setShowOptionals] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState(null);
+
+  useEffect(() => {
+    async function fetchPrompt() {
+      try {
+        const res = await fetch('/api/checkin/prompt');
+        if (res.ok) {
+          const data = await res.json();
+          setAiPrompt(data);
+        }
+      } catch (err) {
+        console.warn('Checkin prompt notice:', err);
+      }
+    }
+    fetchPrompt();
+  }, []);
 
   const handleSubmit = () => {
     saveCheckin({
@@ -55,7 +71,7 @@ export default function CheckinPage() {
           How are you feeling?
         </h1>
 
-        <div className="glass-panel" style={{ padding: 'var(--space-8)', marginBottom: 'var(--space-6)', textAlign: 'center' }}>
+        <div className="glass-panel" style={{ padding: 'clamp(var(--space-5), 5vw, var(--space-8))', marginBottom: 'var(--space-6)', textAlign: 'center' }}>
           <motion.div 
             key={mood}
             initial={{ scale: 0.8, opacity: 0 }}
@@ -81,6 +97,36 @@ export default function CheckinPage() {
             style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--text-primary)' }}
           />
         </div>
+
+        {/* Adaptive AI Psychological Question Card */}
+        {aiPrompt && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-panel"
+            style={{
+              padding: 'var(--space-5)',
+              marginBottom: 'var(--space-6)',
+              borderLeft: '3px solid var(--accent-calm)',
+              background: 'rgba(255, 255, 255, 0.02)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+              <Sparkle size={16} style={{ color: 'var(--accent-calm)' }} weight="fill" />
+              <span className="label-text" style={{ color: 'var(--accent-calm)', fontSize: '11px' }}>
+                A QUESTION FOR YOUR BRAIN
+              </span>
+            </div>
+            <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-primary)', fontWeight: 300, lineHeight: 1.5, marginBottom: 'var(--space-2)' }}>
+              {aiPrompt.question}
+            </p>
+            {aiPrompt.hint && (
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontStyle: 'italic', fontWeight: 300 }}>
+                💡 {aiPrompt.hint}
+              </p>
+            )}
+          </motion.div>
+        )}
 
         <button className="btn btn--glass" style={{ width: '100%', marginBottom: 'var(--space-4)', padding: 'var(--space-4)' }} onClick={() => setShowOptionals(!showOptionals)}>
           {showOptionals ? 'Less detail' : 'Share more (optional)'}
