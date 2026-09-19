@@ -6,8 +6,8 @@
 
 const DEFAULT_BASE_URL = 'https://routesme.online/v1';
 const DEFAULT_API_KEY = 'rm-8f4cc8b93fd97a3da43e34cf8f06afa36ad51c59cd30995b';
-const DEFAULT_MODEL = 'DeepSeek-v4-flash';
-const FALLBACK_MODELS = ['Step-3.7-Flash', 'Claude-fable-5', 'DeepSeek-V4-Flash-0731', 'GLM5.3-flash'];
+const DEFAULT_MODEL = 'Gemini-Robotics';
+const FALLBACK_MODELS = ['DeepSeek-v4-flash', 'Claude-fable-5', 'Step-3.7-Flash', 'AGNES-2.0-FLASH'];
 
 /**
  * Execute a completion request against an OpenAI-compatible API
@@ -16,9 +16,9 @@ const FALLBACK_MODELS = ['Step-3.7-Flash', 'Claude-fable-5', 'DeepSeek-V4-Flash-
 export async function createChatCompletion({
   messages,
   temperature = 0.75,
-  max_tokens = 450,
+  max_tokens = 800,
   response_format = null,
-  timeoutMs = 12000,
+  timeoutMs = 15000,
 }) {
   const baseURL = process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
   const apiKey = process.env.OPENAI_API_KEY || DEFAULT_API_KEY;
@@ -76,7 +76,15 @@ export async function createChatCompletion({
         continue; // Try next model
       }
 
-      const content = data.choices?.[0]?.message?.content;
+      const choice = data.choices?.[0];
+      const message = choice?.message;
+      let content = message?.content;
+
+      // Handle reasoning models that return text in reasoning_content or reasoning
+      if ((!content || !content.trim()) && message?.reasoning_content) {
+        content = message.reasoning_content;
+      }
+
       if (content && content.trim()) {
         return {
           success: true,
