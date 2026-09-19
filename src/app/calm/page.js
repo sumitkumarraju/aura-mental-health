@@ -184,7 +184,7 @@ function BreathingExercise({ onClose }) {
     return () => clearTimeout(timeout);
   }, []);
 
-  const scale = phase === 'Inhale' ? 1.5 : phase === 'Hold' ? 1.5 : phase === 'Exhale' ? 0.9 : 0.9;
+  const scale = phase === 'Inhale' ? 1.35 : phase === 'Hold' ? 1.35 : phase === 'Exhale' ? 0.9 : 0.9;
   const opacity = phase === 'Inhale' || phase === 'Hold' ? 0.8 : 0.3;
 
   return (
@@ -193,7 +193,7 @@ function BreathingExercise({ onClose }) {
         <X size={24} weight="light" />
       </button>
 
-      <div style={{ position: 'relative', width: 320, height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'relative', width: 'min(320px, 70vw)', height: 'min(320px, 70vw)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.div
           animate={{ scale, opacity }}
           transition={{ duration: 4, ease: 'easeInOut' }}

@@ -1,6 +1,8 @@
 import { Outfit, Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/layout/Sidebar';
+import MobileHeader from '@/components/layout/MobileHeader';
+import MobileNav from '@/components/layout/MobileNav';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 
 const outfit = Outfit({
@@ -38,8 +40,10 @@ export default function RootLayout({ children }) {
           <div className="ambient-glow" />
           <div className="noise-overlay" />
           <div className="app-layout">
+            <MobileHeader />
             <Sidebar />
             <main className="main-content">{children}</main>
+            <MobileNav />
           </div>
         </AuthProvider>
       </body>

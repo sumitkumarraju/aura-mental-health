@@ -125,9 +125,8 @@ export default function ChatPage() {
       default: sendMessage(action.label);
     }
   };
-
   return (
-    <div className="page-container" style={{ padding: '0 var(--space-6)', height: '100dvh', display: 'flex', flexDirection: 'column' }}>
+    <div className="chat-page-container">
       {/* Cinematic Header */}
       <div
         style={{
