@@ -5,6 +5,7 @@
  */
 
 const DEFAULT_BASE_URL = 'https://routesme.online/v1';
+const DEFAULT_API_KEY = 'rm-8f4cc8b93fd97a3da43e34cf8f06afa36ad51c59cd30995b';
 const DEFAULT_MODEL = 'DeepSeek-v4-flash';
 const FALLBACK_MODELS = ['Step-3.7-Flash', 'Claude-fable-5', 'DeepSeek-V4-Flash-0731', 'GLM5.3-flash'];
 
@@ -20,7 +21,7 @@ export async function createChatCompletion({
   timeoutMs = 12000,
 }) {
   const baseURL = process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY || DEFAULT_API_KEY;
 
   if (!apiKey) {
     return { success: false, error: 'NO_API_KEY', isFallback: true };
